@@ -1,0 +1,104 @@
+[[permission]]
+identifier = "allow-load-day"
+description = "读取某一天的待办"
+commands.allow = ["load_day"]
+
+[[permission]]
+identifier = "allow-save-day"
+description = "保存某一天的待办"
+commands.allow = ["save_day"]
+
+[[permission]]
+identifier = "allow-load-later"
+description = "读取稍后清单"
+commands.allow = ["load_later"]
+
+[[permission]]
+identifier = "allow-save-later"
+description = "保存稍后清单"
+commands.allow = ["save_later"]
+
+[[permission]]
+identifier = "allow-carry-unfinished"
+description = "把今天之前未完成的待办转到今天"
+commands.allow = ["carry_unfinished"]
+
+[[permission]]
+identifier = "allow-list-categories"
+description = "列出资料分类"
+commands.allow = ["list_categories"]
+
+[[permission]]
+identifier = "allow-list-notes"
+description = "列出资料笔记"
+commands.allow = ["list_notes"]
+
+[[permission]]
+identifier = "allow-read-note"
+description = "读取一篇资料"
+commands.allow = ["read_note"]
+
+[[permission]]
+identifier = "allow-save-note"
+description = "保存一篇资料"
+commands.allow = ["save_note"]
+
+[[permission]]
+identifier = "allow-delete-note"
+description = "删除一篇资料"
+commands.allow = ["delete_note"]
+
+[[permission]]
+identifier = "allow-create-category"
+description = "新建资料分类"
+commands.allow = ["create_category"]
+
+[[permission]]
+identifier = "allow-delete-category"
+description = "删除资料分类"
+commands.allow = ["delete_category"]
+
+[[permission]]
+identifier = "allow-rename-category"
+description = "重命名资料分类"
+commands.allow = ["rename_category"]
+
+[[permission]]
+identifier = "allow-data-directory"
+description = "查看数据目录路径"
+commands.allow = ["data_directory"]
+
+[[permission]]
+identifier = "allow-import-file"
+description = "导入本地文件到资料库"
+commands.allow = ["import_file"]
+
+[[permission]]
+identifier = "allow-absolute-path"
+description = "获取资料绝对路径以便系统打开"
+commands.allow = ["absolute_path"]
+
+[[permission]]
+identifier = "allow-open-stored-file"
+description = "用系统程序打开资料库里的文件"
+commands.allow = ["open_stored_file"]
+
+[[permission]]
+identifier = "allow-reveal-stored-file"
+description = "在资源管理器中定位资料文件"
+commands.allow = ["reveal_stored_file"]
+
+[[permission]]
+identifier = "allow-open-data-directory"
+description = "打开数据目录"
+commands.allow = ["open_data_directory"]
+
+[[permission]]
+identifier = "allow-open-category-directory"
+description = "打开某个资料分类的文件夹"
+commands.allow = ["open_category_directory"]
+
+[[permission]]
+identifier = "allow-write-export"
+description = "把导出的待办写到用户选择的文件"
+commands.allow = ["write_export"]

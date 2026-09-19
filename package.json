@@ -1,0 +1,27 @@
+{
+  "name": "moyu",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "package:portable": "node scripts/package-portable.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
+    "@tauri-apps/plugin-opener": "^2.5.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "happy-dom": "^20.14.5",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>摸鱼大王</title>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="titlebar">
+        <div class="titlebar-rail" data-tauri-drag-region></div>
+        <div class="titlebar-main">
+          <div class="titlebar-drag" data-tauri-drag-region></div>
+          <div class="titlebar-controls">
+            <button type="button" class="win-btn" id="win-min" aria-label="最小化">
+              <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path fill="currentColor" d="M1 6h10v1H1z" /></svg>
+            </button>
+            <button type="button" class="win-btn" id="win-max" aria-label="最大化">
+              <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1" d="M2.5 2.5h7v7h-7z" /></svg>
+            </button>
+            <button type="button" class="win-btn win-close" id="win-close" aria-label="关闭">
+              <svg aria-hidden="true" viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2.5 2.5l7 7M9.5 2.5l-7 7" /></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+      <aside class="rail">
+        <div class="brand-block">
+          <span class="mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path
+                fill="currentColor"
+                d="M4 14c2.2-4 4.4-6 8-6 2.4 0 4.2 1 6.2 3.1L20 9.2C17.6 6.4 14.8 5 12 5 7.2 5 4.2 8.2 2 14c1.6 2.8 3.6 4.6 6.4 5.4 1.2.3 2.4.4 3.6.2 2.6-.4 4.6-1.8 6.8-4.2l-1.6-1.2c-1.8 2-3.4 3-5.4 3.3-2.4.4-4.4-.6-6.2-3.5Z"
+              />
+            </svg>
+          </span>
+          <div>
+            <div class="brand">摸鱼大王</div>
+            <p class="tagline">记下今天，收好常用资料。</p>
+          </div>
+        </div>
+        <nav class="rail-nav" aria-label="页面">
+          <button type="button" class="nav-item active" id="nav-todos" data-view="todos">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 6h11M9 12h11M9 18h11M4.5 6.5l1.2 1.2 2.3-2.4M4.5 12.5l1.2 1.2 2.3-2.4M4.5 18.5l1.2 1.2 2.3-2.4"
+              />
+            </svg>
+            <span>待办</span>
+          </button>
+          <button type="button" class="nav-item" id="nav-notes" data-view="notes">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-9Z"
+              />
+            </svg>
+            <span>资料库</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main class="stage">
+        <section id="view-todos" class="view">
+          <header class="page-head">
+            <div>
+              <p class="kicker" id="date-kicker"></p>
+              <div class="title-row">
+                <h1 id="date-heading">今天</h1>
+                <span id="day-count" class="count"></span>
+              </div>
+            </div>
+            <div class="toolbar date-nav" role="group" aria-label="选择日期范围">
+              <button type="button" class="btn ghost icon-btn" id="date-prev" aria-label="整体前移一天">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="M14.5 6 8.5 12l6 6" />
+                </svg>
+              </button>
+              <div class="date-range">
+                <button type="button" class="date-chip" id="date-start-chip">
+                  <span id="date-start-text"></span>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14">
+                    <path fill="none" stroke="currentColor" stroke-width="1.6" d="M7 4v2M17 4v2M5 9h14M6.5 6h11A1.5 1.5 0 0 1 19 7.5v10a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 17.5v-10A1.5 1.5 0 0 1 6.5 6Z" />
+                  </svg>
+                </button>
+                <input id="date-start" class="date-native" type="date" tabindex="-1" aria-label="开始日期" />
+                <span class="range-sep">至</span>
+                <button type="button" class="date-chip" id="date-end-chip">
+                  <span id="date-end-text"></span>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14">
+                    <path fill="none" stroke="currentColor" stroke-width="1.6" d="M7 4v2M17 4v2M5 9h14M6.5 6h11A1.5 1.5 0 0 1 19 7.5v10a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 17.5v-10A1.5 1.5 0 0 1 6.5 6Z" />
+                  </svg>
+                </button>
+                <input id="date-end" class="date-native" type="date" tabindex="-1" aria-label="结束日期" />
+              </div>
+              <button type="button" class="btn ghost icon-btn" id="date-next" aria-label="整体后移一天">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+                  <path fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" d="m9.5 6 6 6-6 6" />
+                </svg>
+              </button>
+              <button type="button" class="btn ghost today-btn" id="date-today">今天</button>
+              <button type="button" class="btn ghost" id="export-todos">导出</button>
+            </div>
+          </header>
+
+          <div class="sheet">
+            <form id="day-form" class="composer">
+              <input id="day-input" maxlength="200" placeholder="写下今天要做的一件事，回车添加" aria-label="新待办" autocomplete="off" />
+              <button type="submit" class="btn primary">添加</button>
+            </form>
+            <ul id="day-list" class="todo-list"></ul>
+          </div>
+
+          <section class="later-block" aria-labelledby="later-title">
+            <div class="section-title">
+              <h2 id="later-title">稍后</h2>
+              <p class="hint">还没排到某一天的事。</p>
+            </div>
+            <div class="sheet">
+              <form id="later-form" class="composer">
+                <input id="later-input" maxlength="200" placeholder="先记下来，稍后再排" aria-label="新的稍后事项" autocomplete="off" />
+                <button type="submit" class="btn primary">添加</button>
+              </form>
+              <ul id="later-list" class="todo-list"></ul>
+            </div>
+          </section>
+        </section>
+
+        <section id="view-notes" class="view" hidden>
+          <header class="page-head notes-head">
+            <div>
+              <p class="kicker">资料库</p>
+              <h1>常用内容</h1>
+            </div>
+          </header>
+
+          <div class="notes-layout">
+            <div class="pane pane-col cats-pane">
+              <div class="pane-head">
+                <span>分类</span>
+                <span class="pane-meta" id="category-count"></span>
+              </div>
+              <div id="category-list" class="stack cat-stack"></div>
+              <div class="dock">
+                <form id="category-form" class="mini-form">
+                  <input id="category-input" maxlength="60" placeholder="新建分类" aria-label="新建分类" autocomplete="off" />
+                  <button type="submit" class="btn soft">添加</button>
+                </form>
+              </div>
+            </div>
+
+            <div class="pane pane-col files-pane">
+              <div class="files-toolbar">
+                <input id="search-input" class="search" placeholder="搜索文件名" aria-label="搜索资料" autocomplete="off" />
+                <button type="button" id="import-files" class="btn soft">导入</button>
+              </div>
+              <div id="note-list" class="stack file-stack"></div>
+              <div id="file-empty" class="empty-editor">
+                <strong>还没有文件</strong>
+                <span>可导入文件，或点分类旁的「位置」在系统目录里新建后再回来刷新。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+    <div id="modal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-text">
+        <p id="modal-text"></p>
+        <div class="modal-actions">
+          <button type="button" id="modal-cancel" class="btn ghost">取消</button>
+          <button type="button" id="modal-ok" class="btn danger">删除</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

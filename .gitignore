@@ -1,0 +1,10 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/debug-embedded-256.png
+src-tauri/app-icon-source.png
+data/
+tmp/
+.DS_Store
+*.log
