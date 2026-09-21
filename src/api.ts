@@ -138,12 +138,6 @@ export async function pickAndImport(category: string): Promise<NoteSummary[]> {
   const selected = await open({
     multiple: true,
     title: "导入到资料库",
-    filters: [
-      {
-        name: "常用文档",
-        extensions: ["md", "txt", "doc", "docx", "xls", "xlsx", "csv", "ppt", "pptx", "pdf", "rtf"],
-      },
-    ],
   });
   if (!selected) return [];
   const paths = Array.isArray(selected) ? selected : [selected];

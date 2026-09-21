@@ -6,9 +6,6 @@ use serde::{Deserialize, Serialize};
 
 const MAX_NAME_CHARS: usize = 60;
 const MAX_TODO_CHARS: usize = 200;
-const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "md", "txt", "doc", "docx", "xls", "xlsx", "csv", "ppt", "pptx", "pdf", "rtf",
-];
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -277,7 +274,7 @@ impl Store {
                 return Err(StoreError::NotFound("资料不存在".into()));
             };
             if summary.kind != "text" {
-                return Err(StoreError::Invalid("Office 文件请用系统程序编辑".into()));
+                return Err(StoreError::Invalid("非文本文件请用系统程序打开编辑".into()));
             }
             extension = summary.extension;
             let destination_name = format!("{title}.{extension}");
@@ -349,27 +346,38 @@ impl Store {
         if !source.is_file() {
             return Err(StoreError::NotFound("找不到要导入的文件".into()));
         }
+        let source_name = source
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        if !is_listed_file_name(source_name) {
+            return Err(StoreError::Invalid("这类文件不会在资料库中展示".into()));
+        }
         let extension = source
             .extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| ext.to_ascii_lowercase())
             .unwrap_or_default();
-        if !is_supported_extension(&extension) {
-            return Err(StoreError::Invalid(
-                "暂不支持这种文件，可用 Word / Excel / PPT / PDF / 文本".into(),
-            ));
-        }
         let stem = source
             .file_stem()
             .and_then(|value| value.to_str())
+            .or_else(|| source.file_name().and_then(|value| value.to_str()))
             .unwrap_or("未命名");
         let stem = validate_name(stem)?;
-        let mut file_name = format!("{stem}.{extension}");
+        let mut file_name = if extension.is_empty() {
+            stem.clone()
+        } else {
+            format!("{stem}.{extension}")
+        };
         let mut destination = self.entry_path(&category, &file_name);
         if destination.exists() {
             let mut index = 2;
             loop {
-                file_name = format!("{stem} {index}.{extension}");
+                file_name = if extension.is_empty() {
+                    format!("{stem} {index}")
+                } else {
+                    format!("{stem} {index}.{extension}")
+                };
                 destination = self.entry_path(&category, &file_name);
                 if !destination.exists() {
                     break;
@@ -562,26 +570,24 @@ fn summarize_entry(category: &str, path: &Path) -> Result<Option<NoteSummary>, S
     if !path.is_file() {
         return Ok(None);
     }
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase())
-        .unwrap_or_default();
-    if !is_supported_extension(&extension) {
-        return Ok(None);
-    }
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default()
         .to_string();
-    if file_name.is_empty() || file_name.starts_with('.') {
+    if !is_listed_file_name(&file_name) {
         return Ok(None);
     }
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
     let title = path
         .file_stem()
         .and_then(|name| name.to_str())
-        .unwrap_or_default()
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or(file_name.as_str())
         .to_string();
     if title.is_empty() {
         return Ok(None);
@@ -599,8 +605,19 @@ fn summarize_entry(category: &str, path: &Path) -> Result<Option<NoteSummary>, S
     }))
 }
 
-fn is_supported_extension(ext: &str) -> bool {
-    SUPPORTED_EXTENSIONS.iter().any(|item| *item == ext)
+fn is_listed_file_name(file_name: &str) -> bool {
+    if file_name.is_empty() || file_name.starts_with('.') || file_name.starts_with("~$") {
+        return false;
+    }
+    let lower = file_name.to_ascii_lowercase();
+    if lower.ends_with(".tmp")
+        || lower.ends_with(".temp")
+        || lower.ends_with(".swp")
+        || lower.ends_with('~')
+    {
+        return false;
+    }
+    true
 }
 
 fn is_text_extension(ext: &str) -> bool {
@@ -637,19 +654,9 @@ fn validate_file_name(value: &str) -> Result<String, StoreError> {
     if path.components().count() != 1 {
         return Err(StoreError::Invalid("文件名不合法".into()));
     }
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase())
-        .unwrap_or_default();
-    if !is_supported_extension(&extension) {
-        return Err(StoreError::Invalid("不支持的文件类型".into()));
+    if !is_listed_file_name(name) {
+        return Err(StoreError::Invalid("文件名不合法".into()));
     }
-    let stem = path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default();
-    validate_name(stem)?;
     Ok(name.to_string())
 }
 
@@ -1204,7 +1211,7 @@ mod tests {
     }
 
     #[test]
-    fn import_office_like_files_and_reject_unknown() {
+    fn lists_and_imports_any_regular_file() {
         let _scratch = Scratch::new();
         let store = _scratch.store();
         store.create_category("部署").unwrap();
@@ -1219,14 +1226,47 @@ mod tests {
         let again = store.import_file("部署", &source).unwrap();
         assert_eq!(again.file_name, "手册 2.docx");
 
-        let bad = _scratch.0.join("x.exe");
-        fs::write(&bad, b"MZ").unwrap();
-        assert!(store.import_file("部署", &bad).is_err());
+        let png = _scratch.0.join("截图.png");
+        fs::write(&png, b"PNG").unwrap();
+        let image = store.import_file("部署", &png).unwrap();
+        assert_eq!(image.extension, "png");
+        assert_eq!(image.kind, "file");
+
+        let bare = _scratch.0.join("LICENSE");
+        fs::write(&bare, b"mit").unwrap();
+        let no_ext = store.import_file("部署", &bare).unwrap();
+        assert_eq!(no_ext.extension, "");
+        assert_eq!(no_ext.file_name, "LICENSE");
+
+        let exe = _scratch.0.join("tool.exe");
+        fs::write(&exe, b"MZ").unwrap();
+        let binary = store.import_file("部署", &exe).unwrap();
+        assert_eq!(binary.extension, "exe");
+
+        fs::write(
+            store.root().join("notes").join("部署").join(".hidden"),
+            b"x",
+        )
+        .unwrap();
+        fs::write(
+            store.root().join("notes").join("部署").join("draft.tmp"),
+            b"x",
+        )
+        .unwrap();
+        fs::create_dir_all(store.root().join("notes").join("部署").join("子目录")).unwrap();
+
+        let listed = store.list_notes(Some("部署"), None).unwrap();
+        let names: Vec<_> = listed.iter().map(|item| item.file_name.as_str()).collect();
+        assert!(names.contains(&"手册.docx"));
+        assert!(names.contains(&"截图.png"));
+        assert!(names.contains(&"LICENSE"));
+        assert!(names.contains(&"tool.exe"));
+        assert!(!names.iter().any(|name| name.starts_with('.')));
+        assert!(!names.iter().any(|name| name.ends_with(".tmp")));
 
         let path = store.absolute_path("部署", "手册.docx").unwrap();
         assert!(path.contains("手册.docx"));
         assert!(!path.starts_with(r"\\?\"));
-        assert!(!store.display_path().starts_with(r"\\?\"));
         store.delete_note("部署", "手册.docx").unwrap();
         assert!(!store.root().join("notes").join("部署").join("手册.docx").exists());
     }

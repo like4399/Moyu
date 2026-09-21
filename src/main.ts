@@ -366,7 +366,9 @@ function showView(next: ViewName) {
 }
 
 function typeLabel(extension: string): string {
-  return extension.toUpperCase().slice(0, 4);
+  const value = extension.trim();
+  if (!value) return "FILE";
+  return value.toUpperCase().slice(0, 4);
 }
 
 async function refreshNotes(selectFileName?: string) {
@@ -539,13 +541,14 @@ function renderNoteList() {
     button.className =
       note.category === activeCategory && note.fileName === loadedFileName ? "row active" : "row";
     const chip = document.createElement("span");
-    chip.className = `type-chip ${note.extension}`;
+    chip.className = `type-chip ${note.extension || "none"}`;
     chip.setAttribute("aria-hidden", "true");
     chip.textContent = typeLabel(note.extension);
     const meta = document.createElement("span");
     meta.append(document.createTextNode(note.title));
     const small = document.createElement("small");
-    small.textContent = query ? `${note.category} · ${note.extension.toUpperCase()}` : note.extension.toUpperCase();
+    const extLabel = typeLabel(note.extension);
+    small.textContent = query ? `${note.category} · ${extLabel}` : extLabel;
     meta.append(small);
     button.append(chip, meta);
     button.addEventListener("click", () => {
@@ -695,7 +698,14 @@ importFilesBtn.addEventListener("click", () => {
       query = "";
       searchInput.value = "";
       await refreshNotes(imported[imported.length - 1].fileName);
-      showToast(`已导入 ${imported.length} 个文件`);
+      const risky = imported.filter((item) =>
+        ["exe", "bat", "cmd", "ps1", "msi", "scr", "com"].includes(item.extension.toLowerCase()),
+      );
+      showToast(
+        risky.length > 0
+          ? `已导入 ${imported.length} 个文件（含可执行类，请留意来源）`
+          : `已导入 ${imported.length} 个文件`,
+      );
     } catch (error) {
       showError(error);
     }

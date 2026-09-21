@@ -190,20 +190,24 @@ export async function dataDirectory(): Promise<string> {
 }
 
 export async function importFile(category: string, sourcePath: string): Promise<NoteSummary> {
-  const base = sourcePath.split(/[/\\]/).pop() || "未命名.docx";
-  const extension = (base.includes(".") ? base.split(".").pop() : "docx")!.toLowerCase();
-  const title = base.replace(/\.[^.]+$/, "") || "未命名";
+  const base = sourcePath.split(/[/\\]/).pop() || "未命名";
+  if (base.startsWith(".") || base.startsWith("~$") || /\.(tmp|temp|swp)$/i.test(base) || base.endsWith("~")) {
+    throw new Error("文件名不合法");
+  }
   const db = load();
   if (!db.categories.includes(category)) throw new Error("分类不存在");
-  let fileName = `${title}.${extension}`;
+  const dot = base.lastIndexOf(".");
+  const extension = dot > 0 ? base.slice(dot + 1).toLowerCase() : "";
+  const title = (dot > 0 ? base.slice(0, dot) : base).trim() || "未命名";
+  let fileName = extension ? `${title}.${extension}` : title;
   let index = 2;
   while (db.notes.some((note) => note.category === category && note.fileName === fileName)) {
-    fileName = `${title} ${index}.${extension}`;
+    fileName = extension ? `${title} ${index}.${extension}` : `${title} ${index}`;
     index += 1;
   }
   const note: NoteDoc = {
     category,
-    title: fileName.replace(/\.[^.]+$/, ""),
+    title: extension ? fileName.replace(/\.[^.]+$/, "") : fileName,
     fileName,
     extension,
     kind: extension === "md" || extension === "txt" ? "text" : "file",
