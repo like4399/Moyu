@@ -4,7 +4,7 @@ import { addDays, eachDay, isValidISODate, MAX_RANGE_DAYS, normalizeRange, prett
 import { formatTodoExport } from "./export";
 import type { NoteSummary, TodoItem } from "./types";
 
-type ListName = "day" | "later";
+type ListName = "day";
 type ViewName = "todos" | "notes";
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector(selector) as T;
 
@@ -25,11 +25,8 @@ const dateToday = $<HTMLButtonElement>("#date-today");
 const exportTodos = $("#export-todos");
 const dateNext = $("#date-next");
 const dayList = $<HTMLUListElement>("#day-list");
-const laterList = $<HTMLUListElement>("#later-list");
 const dayForm = $<HTMLFormElement>("#day-form");
-const laterForm = $<HTMLFormElement>("#later-form");
 const dayInput = $<HTMLInputElement>("#day-input");
-const laterInput = $<HTMLInputElement>("#later-input");
 const categoryForm = $<HTMLFormElement>("#category-form");
 const categoryList = $("#category-list");
 const noteList = $("#note-list");
@@ -49,7 +46,6 @@ type DayBucket = { date: string; items: TodoItem[] };
 let rangeStart = todayISO();
 let rangeEnd = todayISO();
 let dayBuckets: DayBucket[] = [];
-let laterItems: TodoItem[] = [];
 let categories: string[] = [];
 let notes: NoteSummary[] = [];
 let activeCategory = "";
@@ -58,6 +54,7 @@ let query = "";
 let toastTimer = 0;
 let searchTimer = 0;
 let editingCategory = "";
+let dragKind: "" | "category" | "file" = "";
 
 function errorText(error: unknown): string {
   if (typeof error === "string" && error.trim()) return error;
@@ -122,7 +119,7 @@ async function persistDay(date: string) {
     if (date < todayISO()) await refreshAfterCarry();
   } catch (error) {
     showError(error);
-    current.items = await api.loadDay(date);
+    current.items = sinkDone(await api.loadDay(date));
     renderTodos();
   }
 }
@@ -131,14 +128,8 @@ async function refreshAfterCarry() {
   await setRange(rangeStart, rangeEnd);
 }
 
-async function persistLater() {
-  try {
-    await api.saveLater(laterItems);
-  } catch (error) {
-    showError(error);
-    laterItems = await api.loadLater();
-    renderTodos();
-  }
+function sinkDone(items: TodoItem[]): TodoItem[] {
+  return [...items.filter((item) => !item.done), ...items.filter((item) => item.done)];
 }
 
 function renderTodoList(list: HTMLUListElement, items: TodoItem[], which: ListName, date = "") {
@@ -147,13 +138,6 @@ function renderTodoList(list: HTMLUListElement, items: TodoItem[], which: ListNa
     const empty = document.createElement("li");
     empty.className = "empty";
     empty.textContent = "这一天还没有待办";
-    list.append(empty);
-    return;
-  }
-  if (items.length === 0 && which === "later") {
-    const empty = document.createElement("li");
-    empty.className = "empty";
-    empty.textContent = "没有稍后事项";
     list.append(empty);
     return;
   }
@@ -248,7 +232,6 @@ function renderTodos() {
     dayInput.placeholder = `添加到 ${prettyDate(rangeEnd, today)}，回车添加`;
   }
   renderDaySection();
-  renderTodoList(laterList, laterItems, "later");
 }
 
 async function setRange(start: string, end: string) {
@@ -260,7 +243,7 @@ async function setRange(start: string, end: string) {
   await api.carryUnfinished(todayISO());
   dayBuckets = [];
   for (const date of eachDay(rangeStart, rangeEnd)) {
-    dayBuckets.push({ date, items: await api.loadDay(date) });
+    dayBuckets.push({ date, items: sinkDone(await api.loadDay(date)) });
   }
   renderTodos();
 }
@@ -273,17 +256,13 @@ function bindTodoList(list: HTMLUListElement) {
     if (!row?.dataset.which || row.dataset.index == null) return;
     const which = row.dataset.which as ListName;
     const index = Number(row.dataset.index);
-    if (which === "day") {
-      const current = bucket(row.dataset.date ?? "");
-      if (!current) return;
-      current.items[index].done = target.checked;
-      row.classList.toggle("done", target.checked);
-      void persistDay(current.date);
-      return;
-    }
-    laterItems[index].done = target.checked;
-    row.classList.toggle("done", target.checked);
-    void persistLater();
+    if (which !== "day") return;
+    const current = bucket(row.dataset.date ?? "");
+    if (!current) return;
+    current.items[index].done = target.checked;
+    current.items = sinkDone(current.items);
+    renderTodos();
+    void persistDay(current.date);
   });
 
   list.addEventListener("focusout", (event) => {
@@ -291,9 +270,8 @@ function bindTodoList(list: HTMLUListElement) {
     if (!target.classList.contains("todo-text")) return;
     const row = target.closest<HTMLElement>(".todo");
     if (!row?.dataset.which || row.dataset.index == null) return;
-    const which = row.dataset.which as ListName;
     const index = Number(row.dataset.index);
-    const source = which === "day" ? bucket(row.dataset.date ?? "")?.items : laterItems;
+    const source = bucket(row.dataset.date ?? "")?.items;
     if (!source) return;
     const text = target.value.trim();
     if (!text) {
@@ -303,8 +281,7 @@ function bindTodoList(list: HTMLUListElement) {
     }
     if (text === source[index].text) return;
     source[index].text = text;
-    if (which === "day") void persistDay(row.dataset.date ?? "");
-    else void persistLater();
+    void persistDay(row.dataset.date ?? "");
   });
 
   list.addEventListener("click", (event) => {
@@ -314,38 +291,27 @@ function bindTodoList(list: HTMLUListElement) {
     if (!row?.dataset.which || row.dataset.index == null) return;
     const which = row.dataset.which as ListName;
     const index = Number(row.dataset.index);
-    if (which === "day") {
-      const current = bucket(row.dataset.date ?? "");
-      if (!current) return;
-      current.items.splice(index, 1);
-      renderTodos();
-      void persistDay(current.date);
-      return;
-    }
-    laterItems.splice(index, 1);
+    if (which !== "day") return;
+    const current = bucket(row.dataset.date ?? "");
+    if (!current) return;
+    current.items.splice(index, 1);
     renderTodos();
-    void persistLater();
+    void persistDay(current.date);
   });
 }
 
-function bindAddForm(form: HTMLFormElement, input: HTMLInputElement, which: ListName) {
+function bindAddForm(form: HTMLFormElement, input: HTMLInputElement) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    if (which === "day") {
-      const current = endBucket();
-      if (!dayBuckets.includes(current)) dayBuckets.push(current);
-      current.items.push({ text, done: false });
-      input.value = "";
-      renderTodos();
-      void persistDay(current.date);
-    } else {
-      laterItems.push({ text, done: false });
-      input.value = "";
-      renderTodos();
-      void persistLater();
-    }
+    const current = endBucket();
+    if (!dayBuckets.includes(current)) dayBuckets.push(current);
+    current.items.push({ text, done: false });
+    current.items = sinkDone(current.items);
+    input.value = "";
+    renderTodos();
+    void persistDay(current.date);
     input.focus();
   });
 }
@@ -454,6 +420,8 @@ function renderCategories() {
     });
     actions.append(rename, locate, remove);
     row.append(button, actions);
+    row.dataset.category = category;
+    bindReorder(categoryList, row, button, "category", persistCategoryOrder);
     categoryList.append(row);
   }
 }
@@ -572,9 +540,100 @@ function renderNoteList() {
     remove.classList.add("danger-quiet");
     actions.append(open, reveal, remove);
     row.append(button, actions);
+    if (!query) {
+      row.dataset.fileName = note.fileName;
+      bindReorder(noteList, row, button, "file", persistFileOrder);
+    }
     noteList.append(row);
   }
   noteList.querySelector(".row.active")?.scrollIntoView({ block: "nearest" });
+}
+
+function bindReorder(
+  list: HTMLElement,
+  row: HTMLElement,
+  handle: HTMLElement,
+  kind: "category" | "file",
+  onCommit: () => Promise<void>,
+) {
+  handle.draggable = true;
+  handle.classList.add("can-drag");
+  let dragged = false;
+  handle.addEventListener(
+    "click",
+    (event) => {
+      if (!dragged) return;
+      dragged = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    },
+    true,
+  );
+  handle.addEventListener("dragstart", (event) => {
+    dragged = true;
+    dragKind = kind;
+    row.classList.add("dragging");
+    event.dataTransfer?.setData("text/plain", kind);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  });
+  handle.addEventListener("dragend", () => {
+    dragKind = "";
+    row.classList.remove("dragging");
+    list.querySelectorAll(".drop-before, .drop-after").forEach((item) => {
+      item.classList.remove("drop-before", "drop-after");
+    });
+  });
+  row.addEventListener("dragover", (event) => {
+    if (dragKind !== kind || row.classList.contains("dragging")) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    const after = event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+    list.querySelectorAll(".drop-before, .drop-after").forEach((item) => {
+      item.classList.remove("drop-before", "drop-after");
+    });
+    row.classList.add(after ? "drop-after" : "drop-before");
+  });
+  row.addEventListener("drop", (event) => {
+    if (dragKind !== kind) return;
+    event.preventDefault();
+    const dragging = list.querySelector<HTMLElement>(
+      kind === "category" ? ".cat-row.dragging" : ".file-row.dragging",
+    );
+    row.classList.remove("drop-before", "drop-after");
+    if (!dragging || dragging === row) return;
+    const after = event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+    if (after) row.after(dragging);
+    else row.before(dragging);
+    void onCommit();
+  });
+}
+
+async function persistCategoryOrder() {
+  const names = [...categoryList.querySelectorAll<HTMLElement>(".cat-row[data-category]")]
+    .map((item) => item.dataset.category ?? "")
+    .filter(Boolean);
+  categories = names;
+  try {
+    await api.reorderCategories(names);
+  } catch (error) {
+    showError(error);
+    await refreshNotes();
+  }
+}
+
+async function persistFileOrder() {
+  const category = activeCategory;
+  const names = [...noteList.querySelectorAll<HTMLElement>(".file-row[data-file-name]")]
+    .map((item) => item.dataset.fileName ?? "")
+    .filter(Boolean);
+  const rank = new Map(names.map((name, index) => [name, index]));
+  notes.sort((left, right) => (rank.get(left.fileName) ?? 0) - (rank.get(right.fileName) ?? 0));
+  try {
+    await api.reorderFiles(category, names);
+  } catch (error) {
+    showError(error);
+    await refreshNotes();
+  }
 }
 
 function actionButton(label: string, aria: string, onClick: () => void): HTMLButtonElement {
@@ -665,9 +724,7 @@ dateStart.addEventListener("change", () => void setRange(dateStart.value, rangeE
 dateEnd.addEventListener("change", () => void setRange(rangeStart, dateEnd.value));
 
 bindTodoList(dayList);
-bindTodoList(laterList);
-bindAddForm(dayForm, dayInput, "day");
-bindAddForm(laterForm, laterInput, "later");
+bindAddForm(dayForm, dayInput);
 
 categoryForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -770,7 +827,6 @@ async function bindWindowControls() {
 async function boot() {
   try {
     await bindWindowControls();
-    laterItems = await api.loadLater();
     await setRange(todayISO(), todayISO());
     categories = await api.listCategories();
     activeCategory = categories[0] ?? "";

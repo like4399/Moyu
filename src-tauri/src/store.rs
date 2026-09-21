@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -102,20 +103,9 @@ impl Store {
 
     pub fn save_day(&self, date: &str, items: &[TodoItem]) -> Result<(), StoreError> {
         let date = validate_date(date)?;
-        let items = clean_todos(items)?;
+        let items = sink_done(clean_todos(items)?);
         let path = self.root.join("todos").join(format!("{date}.md"));
         write_todo_file(&path, &date, &items)?;
-        self.write_index()?;
-        Ok(())
-    }
-
-    pub fn load_later(&self) -> Result<Vec<TodoItem>, StoreError> {
-        parse_todos(&read_to_string(&self.root.join("todos").join("later.md"))?)
-    }
-
-    pub fn save_later(&self, items: &[TodoItem]) -> Result<(), StoreError> {
-        let items = clean_todos(items)?;
-        write_todo_file(&self.root.join("todos").join("later.md"), "稍后", &items)?;
         self.write_index()?;
         Ok(())
     }
@@ -165,6 +155,12 @@ impl Store {
     }
 
     pub fn list_categories(&self) -> Result<Vec<String>, StoreError> {
+        let found = self.raw_categories()?;
+        let order = self.read_order()?;
+        Ok(arrange(&order.categories, found))
+    }
+
+    fn raw_categories(&self) -> Result<Vec<String>, StoreError> {
         let mut found = Vec::new();
         for entry in fs::read_dir(self.root.join("notes"))? {
             let entry = entry?;
@@ -177,7 +173,6 @@ impl Store {
             }
             found.push(name);
         }
-        found.sort();
         Ok(found)
     }
 
@@ -199,22 +194,44 @@ impl Store {
             None => self.list_categories()?,
         };
 
+        let order = self.read_order()?;
         let mut notes = Vec::new();
         for category_name in categories {
-            let dir = self.root.join("notes").join(&category_name);
-            let mut files: Vec<_> = fs::read_dir(&dir)?.collect::<Result<Vec<_>, _>>()?;
-            files.sort_by_key(|entry| entry.file_name());
-            for entry in files {
-                let path = entry.path();
-                let Some(summary) = summarize_entry(&category_name, &path)? else {
-                    continue;
-                };
+            let saved = order
+                .files
+                .get(&category_name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            for summary in self.notes_in_category(&category_name, saved)? {
                 if !query.is_empty()
                     && !summary.title.to_lowercase().contains(&query)
                     && !summary.file_name.to_lowercase().contains(&query)
                 {
                     continue;
                 }
+                notes.push(summary);
+            }
+        }
+        Ok(notes)
+    }
+
+    fn notes_in_category(
+        &self,
+        category_name: &str,
+        saved: &[String],
+    ) -> Result<Vec<NoteSummary>, StoreError> {
+        let mut by_name = HashMap::new();
+        for entry in fs::read_dir(self.root.join("notes").join(category_name))? {
+            let path = entry?.path();
+            let Some(summary) = summarize_entry(category_name, &path)? else {
+                continue;
+            };
+            by_name.insert(summary.file_name.clone(), summary);
+        }
+        let present: Vec<_> = by_name.keys().cloned().collect();
+        let mut notes = Vec::new();
+        for name in arrange(saved, present) {
+            if let Some(summary) = by_name.remove(&name) {
                 notes.push(summary);
             }
         }
@@ -267,8 +284,10 @@ impl Store {
         }
 
         let mut extension = "md".to_string();
+        let mut renamed_from = None;
         if let Some(previous) = previous_file_name.map(str::trim).filter(|value| !value.is_empty()) {
             let previous = validate_file_name(previous)?;
+            renamed_from = Some(previous.clone());
             let source = self.entry_path(&category, &previous);
             let Some(summary) = summarize_entry(&category, &source)? else {
                 return Err(StoreError::NotFound("资料不存在".into()));
@@ -314,6 +333,12 @@ impl Store {
             encoded.trim_end_matches('\n').to_string()
         };
         write_atomic(&destination, &encoded)?;
+        if let Some(previous) = renamed_from {
+            if previous != file_name {
+                self.retitle_file_order(&category, &previous, &file_name)?;
+            }
+        }
+        self.sync_file_order(&category)?;
         self.write_index()?;
         Ok(NoteDoc {
             category,
@@ -333,6 +358,7 @@ impl Store {
         if path.is_file() {
             fs::remove_file(path)?;
         }
+        self.sync_file_order(&category)?;
         self.write_index()?;
         Ok(())
     }
@@ -389,6 +415,7 @@ impl Store {
             }
         }
         fs::copy(source, &destination)?;
+        self.sync_file_order(&category)?;
         self.write_index()?;
         summarize_entry(&category, &destination)?
             .ok_or_else(|| StoreError::Invalid("导入后无法识别文件".into()))
@@ -462,6 +489,7 @@ impl Store {
             return Err(StoreError::Conflict("已有同名分类".into()));
         }
         fs::create_dir(path)?;
+        self.sync_category_order()?;
         self.write_index()?;
         Ok(())
     }
@@ -473,6 +501,7 @@ impl Store {
             return Err(StoreError::NotFound("分类不存在".into()));
         }
         fs::remove_dir_all(path)?;
+        self.sync_category_order()?;
         self.write_index()?;
         Ok(())
     }
@@ -492,12 +521,102 @@ impl Store {
             return Err(StoreError::Conflict("已有同名分类".into()));
         }
         fs::rename(source, destination)?;
+        self.retitle_category_order(&from, &to)?;
+        self.sync_category_order()?;
         self.write_index()?;
         Ok(())
     }
 
     fn entry_path(&self, category: &str, file_name: &str) -> PathBuf {
         self.root.join("notes").join(category).join(file_name)
+    }
+
+    pub fn reorder_categories(&self, names: &[String]) -> Result<(), StoreError> {
+        let present = self.raw_categories()?;
+        let mut order = self.read_order()?;
+        order.categories = arrange(names, present);
+        self.write_order(&order)?;
+        self.write_index()?;
+        Ok(())
+    }
+
+    pub fn reorder_files(&self, category: &str, names: &[String]) -> Result<(), StoreError> {
+        let category = validate_name(category)?;
+        if !self.root.join("notes").join(&category).is_dir() {
+            return Err(StoreError::NotFound("分类不存在".into()));
+        }
+        let present = self.raw_file_names(&category)?;
+        let mut order = self.read_order()?;
+        order.files.insert(category, arrange(names, present));
+        self.write_order(&order)?;
+        self.write_index()?;
+        Ok(())
+    }
+
+    fn raw_file_names(&self, category: &str) -> Result<Vec<String>, StoreError> {
+        let mut names = Vec::new();
+        for entry in fs::read_dir(self.root.join("notes").join(category))? {
+            let path = entry?.path();
+            let Some(summary) = summarize_entry(category, &path)? else {
+                continue;
+            };
+            names.push(summary.file_name);
+        }
+        Ok(names)
+    }
+
+    fn sync_category_order(&self) -> Result<(), StoreError> {
+        let mut order = self.read_order()?;
+        order.categories = arrange(&order.categories, self.raw_categories()?);
+        let present: HashSet<_> = order.categories.iter().cloned().collect();
+        order.files.retain(|name, _| present.contains(name));
+        self.write_order(&order)
+    }
+
+    fn sync_file_order(&self, category: &str) -> Result<(), StoreError> {
+        let mut order = self.read_order()?;
+        let saved = order.files.get(category).cloned().unwrap_or_default();
+        order
+            .files
+            .insert(category.to_string(), arrange(&saved, self.raw_file_names(category)?));
+        self.write_order(&order)
+    }
+
+    fn retitle_category_order(&self, from: &str, to: &str) -> Result<(), StoreError> {
+        let mut order = self.read_order()?;
+        for name in &mut order.categories {
+            if name == from {
+                *name = to.to_string();
+            }
+        }
+        if let Some(files) = order.files.remove(from) {
+            order.files.insert(to.to_string(), files);
+        }
+        self.write_order(&order)
+    }
+
+    fn retitle_file_order(&self, category: &str, from: &str, to: &str) -> Result<(), StoreError> {
+        let mut order = self.read_order()?;
+        if let Some(files) = order.files.get_mut(category) {
+            for name in files {
+                if name == from {
+                    *name = to.to_string();
+                }
+            }
+        }
+        self.write_order(&order)
+    }
+
+    fn read_order(&self) -> Result<LibraryOrder, StoreError> {
+        Ok(parse_order(&read_to_string(&self.order_path())?))
+    }
+
+    fn write_order(&self, order: &LibraryOrder) -> Result<(), StoreError> {
+        write_atomic(&self.order_path(), &render_order(order))
+    }
+
+    fn order_path(&self) -> PathBuf {
+        self.root.join(".meta").join("order.md")
     }
 
     fn write_index(&self) -> Result<(), StoreError> {
@@ -517,15 +636,11 @@ impl Store {
             let mut any = false;
             for entry in files {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if !name.ends_with(".md") {
+                if !name.ends_with(".md") || name == "later.md" {
                     continue;
                 }
                 any = true;
-                let label = if name == "later.md" {
-                    "稍后".to_string()
-                } else {
-                    name.trim_end_matches(".md").to_string()
-                };
+                let label = name.trim_end_matches(".md").to_string();
                 lines.push(format!("- [{label}](<../todos/{name}>)"));
             }
             if !any {
@@ -564,6 +679,123 @@ fn plain_path(path: &Path) -> String {
         .to_string()
         .trim_start_matches(r"\\?\")
         .to_string()
+}
+
+#[derive(Default)]
+struct LibraryOrder {
+    categories: Vec<String>,
+    files: HashMap<String, Vec<String>>,
+}
+
+fn arrange(saved: &[String], present: Vec<String>) -> Vec<String> {
+    let present_set: HashSet<&str> = present.iter().map(String::as_str).collect();
+    let mut seen = HashSet::new();
+    let mut ordered = Vec::new();
+    for name in saved {
+        if present_set.contains(name.as_str()) && seen.insert(name.clone()) {
+            ordered.push(name.clone());
+        }
+    }
+    let mut rest = present;
+    rest.sort();
+    for name in rest {
+        if seen.insert(name.clone()) {
+            ordered.push(name);
+        }
+    }
+    ordered
+}
+
+fn parse_order(raw: &str) -> LibraryOrder {
+    let mut order = LibraryOrder::default();
+    let mut section = "";
+    let mut current = String::new();
+    for line in normalize_newlines(raw).lines() {
+        let line = line.trim_end();
+        if line == "## 分类" {
+            section = "categories";
+            current.clear();
+            continue;
+        }
+        if line == "## 文件" {
+            section = "files";
+            current.clear();
+            continue;
+        }
+        if let Some(name) = line.strip_prefix("### ") {
+            if section == "files" {
+                current = name.trim().to_string();
+                if !current.is_empty() {
+                    order.files.entry(current.clone()).or_default();
+                }
+            }
+            continue;
+        }
+        let Some(item) = line.strip_prefix("- ") else {
+            continue;
+        };
+        if item.is_empty() {
+            continue;
+        }
+        match section {
+            "categories" => order.categories.push(item.to_string()),
+            "files" if !current.is_empty() => {
+                order
+                    .files
+                    .entry(current.clone())
+                    .or_default()
+                    .push(item.to_string());
+            }
+            _ => {}
+        }
+    }
+    order
+}
+
+fn render_order(order: &LibraryOrder) -> String {
+    let mut lines = vec![
+        "# 排序".to_string(),
+        String::new(),
+        "本文件由摸鱼大王自动更新。".to_string(),
+        String::new(),
+        "## 分类".to_string(),
+        String::new(),
+    ];
+    for name in &order.categories {
+        lines.push(format!("- {name}"));
+    }
+    lines.push(String::new());
+    lines.push("## 文件".to_string());
+    let mut seen = HashSet::new();
+    for category in &order.categories {
+        if let Some(files) = order.files.get(category) {
+            push_file_section(&mut lines, category, files);
+            seen.insert(category.clone());
+        }
+    }
+    let mut rest: Vec<_> = order
+        .files
+        .keys()
+        .filter(|name| !seen.contains(*name))
+        .cloned()
+        .collect();
+    rest.sort();
+    for category in rest {
+        if let Some(files) = order.files.get(&category) {
+            push_file_section(&mut lines, &category, files);
+        }
+    }
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+fn push_file_section(lines: &mut Vec<String>, category: &str, files: &[String]) {
+    lines.push(String::new());
+    lines.push(format!("### {category}"));
+    lines.push(String::new());
+    for file in files {
+        lines.push(format!("- {file}"));
+    }
 }
 
 fn summarize_entry(category: &str, path: &Path) -> Result<Option<NoteSummary>, StoreError> {
@@ -622,6 +854,20 @@ fn is_listed_file_name(file_name: &str) -> bool {
 
 fn is_text_extension(ext: &str) -> bool {
     matches!(ext, "md" | "txt")
+}
+
+fn sink_done(items: Vec<TodoItem>) -> Vec<TodoItem> {
+    let mut open = Vec::new();
+    let mut done = Vec::new();
+    for item in items {
+        if item.done {
+            done.push(item);
+        } else {
+            open.push(item);
+        }
+    }
+    open.extend(done);
+    open
 }
 
 fn format_size(bytes: u64) -> String {
@@ -1006,6 +1252,31 @@ mod tests {
         assert!(raw.contains("- [ ] 写周报"));
         assert!(raw.contains("- [x] 更新部署说明"));
 
+        store
+            .save_day(
+                "2026-09-19",
+                &[
+                    TodoItem {
+                        text: "已做完".into(),
+                        done: true,
+                    },
+                    TodoItem {
+                        text: "还没做".into(),
+                        done: false,
+                    },
+                ],
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .load_day("2026-09-19")
+                .unwrap()
+                .iter()
+                .map(|item| item.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["还没做", "已做完"]
+        );
+
         assert!(store.load_day("2026-02-29").is_err());
         assert!(store.load_day("2024-02-29").unwrap().is_empty());
         assert!(store.load_day("../2026-09-19").is_err());
@@ -1038,21 +1309,6 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn later_list_roundtrip() {
-        let _scratch = Scratch::new();
-        let store = _scratch.store();
-        store
-            .save_later(&[TodoItem {
-                text: "整理常用话术".into(),
-                done: false,
-            }])
-            .unwrap();
-        assert_eq!(store.load_later().unwrap()[0].text, "整理常用话术");
-        let raw = fs::read_to_string(store.root().join("todos").join("later.md")).unwrap();
-        assert!(raw.starts_with("# 稍后"));
     }
 
     #[test]
@@ -1200,8 +1456,6 @@ mod tests {
         assert!(note.body.contains("10.0.0.8"));
         let day = store.load_day("2026-09-19").unwrap();
         assert!(!day.is_empty());
-        let later = store.load_later().unwrap();
-        assert!(!later.is_empty());
         let index = fs::read_to_string(store.root().join(".meta").join("index.md")).unwrap();
         assert!(index.contains("测试服务器"));
         assert!(!index.contains("AGENTS"));
@@ -1269,6 +1523,42 @@ mod tests {
         assert!(!path.starts_with(r"\\?\"));
         store.delete_note("部署", "手册.docx").unwrap();
         assert!(!store.root().join("notes").join("部署").join("手册.docx").exists());
+    }
+
+    #[test]
+    fn library_order_keeps_dragged_items_and_appends_new_ones() {
+        let scratch = Scratch::new();
+        let store = scratch.store();
+        store.create_category("甲").unwrap();
+        store.create_category("乙").unwrap();
+        store.reorder_categories(&["乙".into(), "甲".into()]).unwrap();
+        assert_eq!(store.list_categories().unwrap(), vec!["乙", "甲"]);
+        store.create_category("丙").unwrap();
+        assert_eq!(store.list_categories().unwrap(), vec!["乙", "甲", "丙"]);
+        store.rename_category("甲", "甲二").unwrap();
+        assert_eq!(store.list_categories().unwrap(), vec!["乙", "甲二", "丙"]);
+
+        let dir = store.root().join("notes").join("乙");
+        fs::write(dir.join("b.txt"), "b").unwrap();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        store.reorder_files("乙", &["b.txt".into(), "a.txt".into()]).unwrap();
+        let names = |store: &Store| {
+            store
+                .list_notes(Some("乙"), None)
+                .unwrap()
+                .into_iter()
+                .map(|note| note.file_name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(&store), vec!["b.txt", "a.txt"]);
+        fs::write(dir.join("c.txt"), "c").unwrap();
+        assert_eq!(names(&store), vec!["b.txt", "a.txt", "c.txt"]);
+        store.delete_category("甲二").unwrap();
+        assert_eq!(store.list_categories().unwrap(), vec!["乙", "丙"]);
+        let raw = fs::read_to_string(store.root().join(".meta").join("order.md")).unwrap();
+        assert!(raw.contains("## 分类"));
+        assert!(raw.contains("- 乙"));
+        assert!(!raw.contains("甲二"));
     }
 
     #[test]

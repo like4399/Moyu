@@ -43,7 +43,7 @@ npm run build
 
 ## 数据约定
 
-- `data/todos/YYYY-MM-DD.md`：某一天的待办，`- [ ]` / `- [x]`
-- `data/todos/later.md`：稍后
-- `data/notes/<分类>/`：资料文件柜。文本、Word、Excel、PPT、PDF 都只列出，单击用系统程序打开，应用内不编辑
+- `data/todos/YYYY-MM-DD.md`：某一天的待办，`- [ ]` / `- [x]`。未完成在上，已完成在下
+- `data/notes/<分类>/`：资料文件柜。文件夹里的普通文件都会列出，单击用系统程序打开，应用内不编辑
 - `data/.meta/index.md`：自动生成的目录，不用手改
+- `data/.meta/order.md`：分类和文件的拖动顺序，不用手改。新出现的项会排到已有顺序后面

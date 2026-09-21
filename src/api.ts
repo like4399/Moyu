@@ -20,16 +20,6 @@ export async function saveDay(date: string, items: TodoItem[]): Promise<void> {
   return call("save_day", { date, items });
 }
 
-export async function loadLater(): Promise<TodoItem[]> {
-  if (!inTauri()) return mock.loadLater();
-  return call("load_later");
-}
-
-export async function saveLater(items: TodoItem[]): Promise<void> {
-  if (!inTauri()) return mock.saveLater(items);
-  return call("save_later", { items });
-}
-
 export async function carryUnfinished(today: string): Promise<number> {
   if (!inTauri()) return mock.carryUnfinished(today);
   return call("carry_unfinished", { today });
@@ -83,6 +73,16 @@ export async function deleteCategory(name: string): Promise<void> {
 export async function renameCategory(from: string, to: string): Promise<void> {
   if (!inTauri()) return mock.renameCategory(from, to);
   return call("rename_category", { from, to });
+}
+
+export async function reorderCategories(names: string[]): Promise<void> {
+  if (!inTauri()) return mock.reorderCategories(names);
+  return call("reorder_categories", { names });
+}
+
+export async function reorderFiles(category: string, names: string[]): Promise<void> {
+  if (!inTauri()) return mock.reorderFiles(category, names);
+  return call("reorder_files", { category, names });
 }
 
 export async function dataDirectory(): Promise<string> {

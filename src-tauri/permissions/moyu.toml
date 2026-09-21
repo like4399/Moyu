@@ -9,16 +9,6 @@ description = "保存某一天的待办"
 commands.allow = ["save_day"]
 
 [[permission]]
-identifier = "allow-load-later"
-description = "读取稍后清单"
-commands.allow = ["load_later"]
-
-[[permission]]
-identifier = "allow-save-later"
-description = "保存稍后清单"
-commands.allow = ["save_later"]
-
-[[permission]]
 identifier = "allow-carry-unfinished"
 description = "把今天之前未完成的待办转到今天"
 commands.allow = ["carry_unfinished"]
@@ -62,6 +52,16 @@ commands.allow = ["delete_category"]
 identifier = "allow-rename-category"
 description = "重命名资料分类"
 commands.allow = ["rename_category"]
+
+[[permission]]
+identifier = "allow-reorder-categories"
+description = "调整资料分类顺序"
+commands.allow = ["reorder_categories"]
+
+[[permission]]
+identifier = "allow-reorder-files"
+description = "调整某个分类里的文件顺序"
+commands.allow = ["reorder_files"]
 
 [[permission]]
 identifier = "allow-data-directory"

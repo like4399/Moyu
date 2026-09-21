@@ -45,16 +45,6 @@ fn save_day(state: State<AppState>, date: String, items: Vec<TodoItem>) -> Resul
 }
 
 #[tauri::command]
-fn load_later(state: State<AppState>) -> Result<Vec<TodoItem>, String> {
-    with_store(&state, |store| store.load_later())
-}
-
-#[tauri::command]
-fn save_later(state: State<AppState>, items: Vec<TodoItem>) -> Result<(), String> {
-    with_store(&state, |store| store.save_later(&items))
-}
-
-#[tauri::command]
 fn carry_unfinished(state: State<AppState>, today: String) -> Result<usize, String> {
     with_store(&state, |store| store.carry_unfinished(&today))
 }
@@ -119,6 +109,20 @@ fn delete_category(state: State<AppState>, name: String) -> Result<(), String> {
 #[tauri::command]
 fn rename_category(state: State<AppState>, from: String, to: String) -> Result<(), String> {
     with_store(&state, |store| store.rename_category(&from, &to))
+}
+
+#[tauri::command]
+fn reorder_categories(state: State<AppState>, names: Vec<String>) -> Result<(), String> {
+    with_store(&state, |store| store.reorder_categories(&names))
+}
+
+#[tauri::command]
+fn reorder_files(
+    state: State<AppState>,
+    category: String,
+    names: Vec<String>,
+) -> Result<(), String> {
+    with_store(&state, |store| store.reorder_files(&category, &names))
 }
 
 #[tauri::command]
@@ -200,8 +204,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_day,
             save_day,
-            load_later,
-            save_later,
             carry_unfinished,
             list_categories,
             list_notes,
@@ -211,6 +213,8 @@ pub fn run() {
             create_category,
             delete_category,
             rename_category,
+            reorder_categories,
+            reorder_files,
             data_directory,
             import_file,
             absolute_path,

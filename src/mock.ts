@@ -4,7 +4,6 @@ const KEY = "moyu.preview.v2";
 
 type DB = {
   days: Record<string, TodoItem[]>;
-  later: TodoItem[];
   categories: string[];
   notes: NoteDoc[];
 };
@@ -12,7 +11,6 @@ type DB = {
 function blank(): DB {
   return {
     days: {},
-    later: [],
     categories: [],
     notes: [],
   };
@@ -30,6 +28,10 @@ function load(): DB {
 
 function save(db: DB) {
   localStorage.setItem(KEY, JSON.stringify(db));
+}
+
+function sinkDone(items: TodoItem[]): TodoItem[] {
+  return [...items.filter((item) => !item.done), ...items.filter((item) => item.done)];
 }
 
 function cleanItems(items: TodoItem[]): TodoItem[] {
@@ -54,19 +56,9 @@ export async function loadDay(date: string): Promise<TodoItem[]> {
 
 export async function saveDay(date: string, items: TodoItem[]): Promise<void> {
   const db = load();
-  const cleaned = cleanItems(items);
+  const cleaned = sinkDone(cleanItems(items));
   if (cleaned.length === 0) delete db.days[date];
   else db.days[date] = cleaned;
-  save(db);
-}
-
-export async function loadLater(): Promise<TodoItem[]> {
-  return load().later;
-}
-
-export async function saveLater(items: TodoItem[]): Promise<void> {
-  const db = load();
-  db.later = cleanItems(items);
   save(db);
 }
 
@@ -86,7 +78,7 @@ export async function carryUnfinished(today: string): Promise<number> {
     else db.days[date] = done;
   }
   if (moved.length > 0) {
-    db.days[today] = [...moved, ...(db.days[today] ?? [])];
+    db.days[today] = sinkDone([...moved, ...(db.days[today] ?? [])]);
     save(db);
   }
   return moved.length;
@@ -182,6 +174,48 @@ export async function renameCategory(from: string, to: string): Promise<void> {
   for (const note of db.notes) {
     if (note.category === from) note.category = next;
   }
+  save(db);
+}
+
+export async function reorderCategories(names: string[]): Promise<void> {
+  const db = load();
+  const known = new Set(db.categories);
+  const next = names.filter((name, index) => known.has(name) && names.indexOf(name) === index);
+  for (const name of db.categories) {
+    if (!next.includes(name)) next.push(name);
+  }
+  db.categories = next;
+  save(db);
+}
+
+export async function reorderFiles(category: string, names: string[]): Promise<void> {
+  const db = load();
+  if (!db.categories.includes(category)) throw new Error("分类不存在");
+  const inCategory = db.notes.filter((note) => note.category === category);
+  const byName = new Map(inCategory.map((note) => [note.fileName, note]));
+  const ordered = [];
+  for (const name of names) {
+    const note = byName.get(name);
+    if (!note) continue;
+    ordered.push(note);
+    byName.delete(name);
+  }
+  for (const note of inCategory) {
+    if (byName.has(note.fileName)) ordered.push(note);
+  }
+  let placed = false;
+  const rebuilt = [];
+  for (const note of db.notes) {
+    if (note.category !== category) {
+      rebuilt.push(note);
+      continue;
+    }
+    if (!placed) {
+      rebuilt.push(...ordered);
+      placed = true;
+    }
+  }
+  db.notes = rebuilt;
   save(db);
 }
 

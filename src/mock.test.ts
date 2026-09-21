@@ -6,7 +6,7 @@ describe("mock api", () => {
     localStorage.clear();
   });
 
-  it("roundtrips day todos and later list", async () => {
+  it("roundtrips day todos and sinks completed items", async () => {
     await mock.saveDay("2026-09-19", [
       { text: " 写周报 ", done: false },
       { text: "", done: false },
@@ -16,8 +16,14 @@ describe("mock api", () => {
       { text: "写周报", done: false },
       { text: "已完成", done: true },
     ]);
-    await mock.saveLater([{ text: "备份", done: false }]);
-    expect((await mock.loadLater())[0].text).toBe("备份");
+    await mock.saveDay("2026-09-20", [
+      { text: "已做完", done: true },
+      { text: "还没做", done: false },
+    ]);
+    expect(await mock.loadDay("2026-09-20")).toEqual([
+      { text: "还没做", done: false },
+      { text: "已做完", done: true },
+    ]);
   });
 
   it("moves unfinished todos from past days onto today", async () => {
@@ -66,5 +72,16 @@ describe("mock api", () => {
     expect(imported.kind).toBe("file");
     const hits = await mock.listNotes(null, "手册");
     expect(hits.some((item) => item.fileName.startsWith("手册"))).toBe(true);
+  });
+
+  it("reorders categories and files", async () => {
+    await mock.createCategory("甲");
+    await mock.createCategory("乙");
+    await mock.reorderCategories(["乙", "甲"]);
+    expect(await mock.listCategories()).toEqual(["乙", "甲"]);
+    await mock.saveNote({ category: "乙", title: "后", body: "", previousFileName: null });
+    await mock.saveNote({ category: "乙", title: "先", body: "", previousFileName: null });
+    await mock.reorderFiles("乙", ["先.md", "后.md"]);
+    expect((await mock.listNotes("乙", null)).map((note) => note.fileName)).toEqual(["先.md", "后.md"]);
   });
 });
